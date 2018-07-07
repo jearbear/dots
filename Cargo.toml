@@ -1,0 +1,8 @@
+[package]
+name = "dots"
+version = "0.1.0"
+authors = ["Jerry Tegno <jerrytegno@gmail.com>"]
+
+[dependencies]
+clap = "2.31.2"
+walkdir = "2"
