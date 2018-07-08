@@ -6,3 +6,4 @@ authors = ["Jerry Tegno <jerrytegno@gmail.com>"]
 [dependencies]
 clap = "2.31.2"
 walkdir = "2"
+lazy_static = "1.0"
