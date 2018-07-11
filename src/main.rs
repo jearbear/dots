@@ -1,28 +1,22 @@
 extern crate clap;
-#[macro_use]
-extern crate lazy_static;
+extern crate dirs;
 extern crate walkdir;
 
-use clap::{App, AppSettings, Arg, ArgMatches, SubCommand};
+use clap::{App, AppSettings, Arg, SubCommand};
 use walkdir::{DirEntry, WalkDir};
 
+use std::fs;
 use std::path::PathBuf;
-use std::{env, fs};
 
 static INFO: &str = "dots - Dotfile management made less toilesome.";
 
-lazy_static! {
-    static ref HOME_DIR: PathBuf = env::home_dir().unwrap();
-    static ref DOT_ROOT: PathBuf = HOME_DIR.join(".dotfiles");
-}
+type _Result<T> = std::result::Result<T, Box<std::error::Error>>;
 
-type Result<T> = std::result::Result<T, Box<std::error::Error>>;
-
-fn main() -> Result<()> {
+fn main() {
     let list_command =
-        SubCommand::with_name("list").about("List all installed dotfiles in the current directory");
+        SubCommand::with_name("list").about("List all installed dotfiles in the given store");
 
-    let add_command = SubCommand::with_name("add")
+    let _add_command = SubCommand::with_name("add")
         .about("Link dotfile to home directory")
         .arg(
             Arg::with_name("dotfile")
@@ -32,41 +26,62 @@ fn main() -> Result<()> {
         );
 
     let matches = App::new(INFO)
+        .setting(AppSettings::DisableVersion)
         .setting(AppSettings::SubcommandRequiredElseHelp)
         .setting(AppSettings::UnifiedHelpMessage)
-        .setting(AppSettings::DisableVersion)
         .setting(AppSettings::VersionlessSubcommands)
         .subcommand(list_command)
-        .subcommand(add_command)
+        // .subcommand(add_command)
+        .arg(
+            Arg::with_name("store")
+                .help("Path of dotfile store [default: ~/.dotfiles]")
+                .global(true)
+                .long("store")
+                .value_name("PATH"),
+        )
         .get_matches();
 
+    let dot_root = match matches.value_of("store") {
+        Some(store_path) => PathBuf::from(store_path),
+        None => home_dir().join(".dotfiles"),
+    };
+
+    let store = Store::new(&dot_root);
+
     match matches.subcommand_name() {
-        Some("add") => add(matches.subcommand_matches("add").unwrap()),
-        Some("list") => list(),
-        _ => Ok(()),
-    }
-}
+        Some("list") => {
+            println!("Installed dotfiles from `{}`:", dot_root.to_string_lossy());
 
-fn add(_matches: &ArgMatches) -> Result<()> {
-    Ok(())
-}
-
-fn list() -> Result<()> {
-    println!("Installed dotfiles from {}:", DOT_ROOT.to_string_lossy());
-
-    let entries = WalkDir::new(DOT_ROOT.to_path_buf())
-        .into_iter()
-        .filter_entry(|e| !is_ignored(e))
-        .filter_map(|e| e.ok());
-
-    for e in entries {
-        let dotfile = Dotfile::new(e.path())?;
-        if dotfile.installed() {
-            println!("- {}", dotfile.path_str());
+            for dotfile in store.installed() {
+                println!("- {}", dotfile.path.to_string_lossy());
+            }
         }
+
+        _ => {}
+    }
+}
+
+struct Store {
+    dotfiles: Vec<Dotfile>,
+}
+
+impl Store {
+    fn new<P: Into<PathBuf>>(path: P) -> Store {
+        let dot_root = path.into();
+        let dotfiles = WalkDir::new(dot_root.to_path_buf())
+            .into_iter()
+            .filter_entry(|e| !is_ignored(e))
+            .flat_map(|e| e)
+            .flat_map(|e| e.path().strip_prefix(&dot_root).map(|p| p.to_path_buf()))
+            .map(|p| Dotfile::new(&dot_root, &p))
+            .collect();
+
+        Store { dotfiles }
     }
 
-    Ok(())
+    fn installed(&self) -> impl Iterator<Item = &Dotfile> {
+        self.dotfiles.iter().filter(|d| d.installed())
+    }
 }
 
 fn is_ignored(entry: &DirEntry) -> bool {
@@ -78,28 +93,24 @@ fn is_ignored(entry: &DirEntry) -> bool {
 }
 
 struct Dotfile {
+    store_path: PathBuf,
     path: PathBuf,
 }
 
 impl Dotfile {
-    fn new<P: Into<PathBuf>>(path: P) -> Result<Dotfile> {
-        Ok(Dotfile {
-            path: path.into()
-                .strip_prefix(DOT_ROOT.to_path_buf())?
-                .to_path_buf(),
-        })
-    }
-
-    fn path_str(&self) -> String {
-        self.path.to_string_lossy().to_string()
+    fn new<P: Into<PathBuf>>(store_path: P, path: P) -> Dotfile {
+        Dotfile {
+            store_path: store_path.into(),
+            path: path.into(),
+        }
     }
 
     fn source(&self) -> PathBuf {
-        DOT_ROOT.join(&self.path)
+        self.store_path.join(&self.path)
     }
 
     fn target(&self) -> PathBuf {
-        HOME_DIR.join(PathBuf::from(format!(".{}", self.path.to_string_lossy())))
+        home_dir().join(PathBuf::from(format!(".{}", self.path.to_string_lossy())))
     }
 
     fn installed(&self) -> bool {
@@ -108,4 +119,8 @@ impl Dotfile {
             _ => false,
         }
     }
+}
+
+fn home_dir() -> PathBuf {
+    dirs::home_dir().unwrap()
 }
