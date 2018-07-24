@@ -6,4 +6,7 @@ authors = ["Jerry Tegno <jerrytegno@gmail.com>"]
 [dependencies]
 clap = "2.31.2"
 dirs = "1.0"
+failure = "0.1"
+failure_derive = "0.1"
+structopt = "0.2"
 walkdir = "2"
