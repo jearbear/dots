@@ -1,4 +1,3 @@
-```
 dots - Dotfile management made less toilesome.
 
 USAGE:
@@ -15,4 +14,3 @@ SUBCOMMANDS:
     help      Prints this message or the help of the given subcommand(s)
     list      List all installed dotfiles in the given store
     remove    Unlink dotfile from target in home directory
-```
