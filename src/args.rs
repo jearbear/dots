@@ -27,22 +27,25 @@ pub struct Opt {
 #[derive(StructOpt, Debug)]
 pub enum Command {
     #[structopt(
-        name = "add", about = "Link dotfile to target in home directory", author = "", version = ""
+        name = "add",
+        about = "Link dotfile(s) to target in home directory",
+        author = "",
+        version = ""
     )]
     Add {
-        #[structopt(help = "Dotfile to install", parse(from_os_str))]
-        dotfile: PathBuf,
+        #[structopt(help = "Dotfile(s) to install", parse(from_os_str))]
+        dotfiles: Vec<PathBuf>,
     },
 
     #[structopt(
         name = "remove",
-        about = "Unlink dotfile from target in home directory",
+        about = "Unlink dotfile(s) from target in home directory",
         author = "",
         version = ""
     )]
     Remove {
-        #[structopt(help = "Dotfile to uninstall", parse(from_os_str))]
-        dotfile: PathBuf,
+        #[structopt(help = "Dotfile(s) to uninstall", parse(from_os_str))]
+        dotfiles: Vec<PathBuf>,
     },
 
     #[structopt(

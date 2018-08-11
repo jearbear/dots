@@ -1,45 +1,53 @@
-mod args;
-mod dotfile;
-mod error;
-
-extern crate clap;
-extern crate dirs;
-extern crate failure;
-extern crate walkdir;
-
 #[macro_use]
-extern crate failure_derive;
+extern crate failure;
+#[macro_use]
+extern crate lazy_static;
 #[macro_use]
 extern crate structopt;
 
-use structopt::StructOpt;
+extern crate clap;
+extern crate dirs;
+extern crate walkdir;
+
+mod args;
+mod dotfile;
+mod error;
 
 use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::PathBuf;
 
+use structopt::StructOpt;
+
 use args::{Command, Opt};
 use dotfile::{DotfileState, Store};
-use error::{pretty_err, AppError, Result};
+use error::*;
 
-fn main() {
-    let matches = Opt::from_args();
+lazy_static! {
+    static ref HOME_DIR: PathBuf = dirs::home_dir().unwrap();
+}
 
-    let dot_root = matches.store.unwrap_or_else(|| {
-        let home = dirs::home_dir().unwrap();
-        home.join(".dotfiles")
-    });
+fn do_main(args: Opt) -> Result<()> {
+    let dot_root = args.store.unwrap_or_else(|| HOME_DIR.join(".dotfiles"));
     let store = Store::new(&dot_root);
 
-    let res = match matches.cmd {
-        Command::Add { dotfile } => run_add_command(&store, dotfile),
-        Command::Remove { dotfile } => run_remove_command(&store, dotfile),
+    match args.cmd {
+        Command::Add { dotfiles } => run_add_commands(&store, dotfiles),
+        Command::Remove { dotfiles } => run_remove_commands(&store, dotfiles),
         Command::List {} => run_list_command(&store),
-    };
+    }?;
 
-    if let Err(err) = res {
-        println!("Error: {}", pretty_err(&err));
-    }
+    Ok(())
+}
+
+fn run_add_commands<P: Into<PathBuf>>(store: &Store, names: Vec<P>) -> Result<()> {
+    names
+        .into_iter()
+        .map(|name| name.into())
+        .map(|name| run_add_command(store, name))
+        .collect::<Result<_>>()?;
+
+    Ok(())
 }
 
 fn run_add_command<P: Into<PathBuf>>(store: &Store, name: P) -> Result<()> {
@@ -61,6 +69,16 @@ fn run_add_command<P: Into<PathBuf>>(store: &Store, name: P) -> Result<()> {
     }
 }
 
+fn run_remove_commands<P: Into<PathBuf>>(store: &Store, names: Vec<P>) -> Result<()> {
+    names
+        .into_iter()
+        .map(|name| name.into())
+        .map(|name| run_remove_command(store, name))
+        .collect::<Result<_>>()?;
+
+    Ok(())
+}
+
 fn run_remove_command<P: Into<PathBuf>>(store: &Store, name: P) -> Result<()> {
     let name = name.into();
     let dotfile = store
@@ -78,7 +96,8 @@ fn run_remove_command<P: Into<PathBuf>>(store: &Store, name: P) -> Result<()> {
 }
 
 fn run_list_command(store: &Store) -> Result<()> {
-    println!("Dotfiles from {:?}:", store.root());
+    eprintln!("Printing dotfiles from {:?}", store.root());
+    eprintln!("Legend: [x] installed, [-] blocked, [ ] uninstalled\n");
 
     for dotfile in store.all() {
         println!(
@@ -93,4 +112,16 @@ fn run_list_command(store: &Store) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn main() {
+    let args = Opt::from_args();
+
+    if let Err(err) = do_main(args) {
+        eprintln!("Error: {}", err);
+        for cause in err.iter_chain().skip(1) {
+            eprintln!("Caused by: {}", cause);
+        }
+        std::process::exit(1);
+    }
 }

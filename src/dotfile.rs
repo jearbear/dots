@@ -12,6 +12,7 @@ pub struct Store {
 impl Store {
     pub fn new<P: Into<PathBuf>>(path: P) -> Store {
         let dot_root = path.into();
+
         let mut dotfiles: Vec<Dotfile> = WalkDir::new(dot_root.to_path_buf())
             .min_depth(1)
             .into_iter()
