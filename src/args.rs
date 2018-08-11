@@ -33,7 +33,7 @@ pub enum Command {
         version = ""
     )]
     Add {
-        #[structopt(help = "Dotfile(s) to install", parse(from_os_str))]
+        #[structopt(help = "Dotfile(s) to install", parse(from_os_str), raw(required = "true"))]
         dotfiles: Vec<PathBuf>,
     },
 
@@ -44,7 +44,7 @@ pub enum Command {
         version = ""
     )]
     Remove {
-        #[structopt(help = "Dotfile(s) to uninstall", parse(from_os_str))]
+        #[structopt(help = "Dotfile(s) to uninstall", parse(from_os_str), raw(required = "true"))]
         dotfiles: Vec<PathBuf>,
     },
 
