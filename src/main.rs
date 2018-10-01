@@ -14,14 +14,14 @@ mod dotfile;
 mod error;
 
 use std::fs;
-use std::os::unix::fs::symlink;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
+use failure::ResultExt;
 use structopt::StructOpt;
 
 use args::{Command, Opt};
-use dotfile::{DotfileState, Store};
-use error::*;
+use dotfile::{DFState, Dotfile, Store};
+use error::Result;
 
 lazy_static! {
     static ref HOME_DIR: PathBuf = dirs::home_dir().unwrap();
@@ -29,89 +29,110 @@ lazy_static! {
 
 fn do_main(args: Opt) -> Result<()> {
     let dot_root = args.store.unwrap_or_else(|| HOME_DIR.join(".dotfiles"));
-    let store = Store::new(&dot_root);
+
+    ensure!(
+        fs::metadata(&dot_root)?.is_dir(),
+        "Given store path `{}` is not a directory.",
+        dot_root.display()
+    );
+
+    let mut store = Store::new(&dot_root);
 
     match args.cmd {
-        Command::Add { dotfiles } => run_add_commands(&store, dotfiles),
-        Command::Remove { dotfiles } => run_remove_commands(&store, dotfiles),
-        Command::List {} => run_list_command(&store),
-    }?;
-
-    Ok(())
-}
-
-fn run_add_commands<P: Into<PathBuf>>(store: &Store, names: Vec<P>) -> Result<()> {
-    names
-        .into_iter()
-        .map(|name| name.into())
-        .map(|name| run_add_command(store, name))
-        .collect::<Result<_>>()?;
-
-    Ok(())
-}
-
-fn run_add_command<P: Into<PathBuf>>(store: &Store, name: P) -> Result<()> {
-    let name = name.into();
-    let dotfile = store
-        .get(&name)
-        .ok_or_else(|| AppError::DotfileNotFound(name))?;
-
-    match dotfile.state() {
-        DotfileState::Installed => Ok(()),
-        DotfileState::Blocked => Err(AppError::DotfileBlocked(dotfile.target()))?,
-        DotfileState::Uninstalled => {
-            if let Some(parent) = dotfile.target().parent() {
-                fs::create_dir_all(parent).map_err(AppError::IOError)?;
-            }
-            symlink(dotfile.source(), dotfile.target()).map_err(AppError::IOError)?;
-            Ok(())
-        }
+        Command::Install { dotfiles } => install_dotfiles(&store, &dotfiles),
+        Command::Uninstall { dotfiles } => uninstall_dotfiles(&store, &dotfiles),
+        Command::Manage { dotfiles } => manage_dotfiles(&mut store, &dotfiles),
+        Command::Unmanage { dotfiles } => unmanage_dotfiles(&mut store, &dotfiles),
+        Command::List {} => list_dotfiles(&store),
     }
 }
 
-fn run_remove_commands<P: Into<PathBuf>>(store: &Store, names: Vec<P>) -> Result<()> {
-    names
-        .into_iter()
-        .map(|name| name.into())
-        .map(|name| run_remove_command(store, name))
-        .collect::<Result<_>>()?;
+fn install_dotfiles(store: &Store, paths: &[PathBuf]) -> Result<()> {
+    for path in paths {
+        let dotfile = fetch_dotfile(store, path)?;
+
+        match dotfile.state() {
+            DFState::Installed => Ok(()),
+            DFState::Blocked => Err(format_err!(
+                "Dotfile target `{}` is blocked.",
+                dotfile.target.display()
+            )),
+            DFState::Uninstalled => dotfile.install(),
+        }.context(format!("Failed to install `{}`.", dotfile.name.display()))?;
+    }
 
     Ok(())
 }
 
-fn run_remove_command<P: Into<PathBuf>>(store: &Store, name: P) -> Result<()> {
-    let name = name.into();
-    let dotfile = store
-        .get(&name)
-        .ok_or_else(|| AppError::DotfileNotFound(name))?;
+fn uninstall_dotfiles(store: &Store, paths: &[PathBuf]) -> Result<()> {
+    for path in paths {
+        let dotfile = fetch_dotfile(store, path)?;
 
-    match dotfile.state() {
-        DotfileState::Installed => {
-            fs::remove_file(dotfile.target())?;
-            Ok(())
-        }
-        DotfileState::Blocked => Err(AppError::DotfileBlocked(dotfile.target()))?,
-        DotfileState::Uninstalled => Ok(()),
+        match dotfile.state() {
+            DFState::Installed => dotfile.uninstall(),
+            DFState::Blocked | DFState::Uninstalled => Ok(()),
+        }.context(format!("Failed to uninstall `{}`.", dotfile.name.display()))?;
     }
+
+    Ok(())
 }
 
-fn run_list_command(store: &Store) -> Result<()> {
-    eprintln!("Printing dotfiles from {:?}", store.root());
+fn manage_dotfiles(store: &mut Store, targets: &[PathBuf]) -> Result<()> {
+    for target in targets {
+        ensure!(
+            store.get(target).is_none(),
+            "Dotfile with target `{}` already exists in the store.",
+            target.display()
+        );
+
+        Dotfile::from_target(&store.path, target)
+            .and_then(|df| df.store().map(|_| df))
+            .map(|df| store.add(df))
+            .context(format!("Failed to manage `{}`.", target.display()))?;
+    }
+
+    Ok(())
+}
+
+fn unmanage_dotfiles(store: &mut Store, paths: &[PathBuf]) -> Result<()> {
+    for path in paths {
+        {
+            let dotfile = fetch_dotfile(store, path)?;
+
+            dotfile
+                .unstore()
+                .context(format!("Failed to unmanage `{}`", dotfile.name.display()))?;
+        }
+
+        store.remove(path);
+    }
+
+    Ok(())
+}
+
+fn list_dotfiles(store: &Store) -> Result<()> {
+    eprintln!("Printing dotfiles from {}", store.path.display());
     eprintln!("Legend: [x] installed, [-] blocked, [ ] uninstalled\n");
 
     for dotfile in store.all() {
         println!(
             "[{}] {}",
             match dotfile.state() {
-                DotfileState::Installed => "x",
-                DotfileState::Blocked => "-",
-                DotfileState::Uninstalled => " ",
+                DFState::Installed => "x",
+                DFState::Blocked => "-",
+                DFState::Uninstalled => " ",
             },
-            dotfile.name().to_string_lossy(),
+            dotfile.name.display(),
         );
     }
 
     Ok(())
+}
+
+fn fetch_dotfile<'a>(store: &'a Store, path: &Path) -> Result<&'a Dotfile> {
+    store
+        .get(path)
+        .ok_or_else(|| format_err!("Dotfile not found with reference `{}`.", path.display()))
 }
 
 fn main() {

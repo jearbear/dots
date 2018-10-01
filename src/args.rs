@@ -1,4 +1,7 @@
+use std::ffi::{OsStr, OsString};
+use std::fs;
 use std::path::PathBuf;
+
 use structopt::clap::AppSettings;
 
 #[derive(StructOpt, Debug)]
@@ -16,7 +19,7 @@ pub struct Opt {
         long = "store",
         raw(global = "true"),
         value_name = "PATH",
-        parse(from_os_str)
+        parse(try_from_os_str = "resolve_path")
     )]
     pub store: Option<PathBuf>,
 
@@ -27,24 +30,62 @@ pub struct Opt {
 #[derive(StructOpt, Debug)]
 pub enum Command {
     #[structopt(
-        name = "add",
+        name = "install",
         about = "Link dotfile(s) to target in home directory",
         author = "",
         version = ""
     )]
-    Add {
-        #[structopt(help = "Dotfile(s) to install", parse(from_os_str), raw(required = "true"))]
+    Install {
+        #[structopt(
+            help = "Dotfile(s) to install",
+            parse(try_from_os_str = "resolve_path"),
+            raw(required = "true")
+        )]
         dotfiles: Vec<PathBuf>,
     },
 
     #[structopt(
-        name = "remove",
+        name = "uninstall",
         about = "Unlink dotfile(s) from target in home directory",
         author = "",
         version = ""
     )]
-    Remove {
-        #[structopt(help = "Dotfile(s) to uninstall", parse(from_os_str), raw(required = "true"))]
+    Uninstall {
+        #[structopt(
+            help = "Dotfile(s) to uninstall",
+            parse(try_from_os_str = "resolve_path"),
+            raw(required = "true")
+        )]
+        dotfiles: Vec<PathBuf>,
+    },
+
+    #[structopt(
+        name = "manage",
+        about = "Move dotfile(s) to the store and link them back to their target",
+        author = "",
+        version = ""
+    )]
+    Manage {
+        #[structopt(
+            help = "Dotfile(s) to manage",
+            parse(try_from_os_str = "resolve_path"),
+            raw(required = "true")
+        )]
+        dotfiles: Vec<PathBuf>,
+    },
+
+    #[structopt(
+        name = "unmanage",
+        about = "Move dotfile(s) out of the store and back to their target",
+        author = "",
+        version = ""
+    )]
+    Unmanage {
+        #[structopt(
+            help = "Dotfile(s) to unmanage",
+            parse(try_from_os_str = "resolve_path"),
+            raw(required = "true")
+        )]
         dotfiles: Vec<PathBuf>,
     },
 
@@ -55,4 +96,22 @@ pub enum Command {
         version = ""
     )]
     List {},
+}
+
+fn resolve_path(path: &OsStr) -> Result<PathBuf, OsString> {
+    let path = fs::canonicalize(path).map_err(|_| {
+        OsString::from(format!(
+            "Path `{}` could not be resolved.",
+            path.to_string_lossy()
+        ))
+    })?;
+
+    if path.is_file() {
+        Ok(path)
+    } else {
+        Err(OsString::from(format!(
+            "Path `{}` must be a file.",
+            path.display()
+        )))
+    }
 }

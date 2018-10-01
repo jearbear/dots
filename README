@@ -10,7 +10,9 @@ OPTIONS:
         --store <PATH>    Path of dotfile store [default: ~/.dotfiles]
 
 SUBCOMMANDS:
-    add       Link dotfile to target in home directory
-    help      Prints this message or the help of the given subcommand(s)
-    list      List all installed dotfiles in the given store
-    remove    Unlink dotfile from target in home directory
+    help         Prints this message or the help of the given subcommand(s)
+    install      Link dotfile(s) to target in home directory
+    list         List all installed dotfiles in the given store
+    manage       Move dotfile(s) to the store and link them back to their target
+    uninstall    Unlink dotfile(s) from target in home directory
+    unmanage     Move dotfile(s) out of the store and back to their target
