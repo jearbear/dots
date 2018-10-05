@@ -72,7 +72,7 @@ impl Dotfile {
 
         let stripped = target.strip_prefix(&*::HOME_DIR)?;
         ensure!(
-            stripped.to_string_lossy().starts_with("."),
+            stripped.to_string_lossy().starts_with('.'),
             "Target must be a dotfile."
         );
         let name = PathBuf::from(stripped.to_string_lossy().trim_left_matches('.'));
