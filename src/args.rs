@@ -19,7 +19,7 @@ pub struct Opt {
         long = "store",
         raw(global = "true"),
         value_name = "PATH",
-        parse(try_from_os_str = "resolve_path")
+        parse(try_from_os_str = "resolve_dir")
     )]
     pub store: Option<PathBuf>,
 
@@ -38,7 +38,7 @@ pub enum Command {
     Install {
         #[structopt(
             help = "Dotfile(s) to install",
-            parse(try_from_os_str = "resolve_path"),
+            parse(try_from_os_str = "resolve_file"),
             raw(required = "true")
         )]
         dotfiles: Vec<PathBuf>,
@@ -53,7 +53,7 @@ pub enum Command {
     Uninstall {
         #[structopt(
             help = "Dotfile(s) to uninstall",
-            parse(try_from_os_str = "resolve_path"),
+            parse(try_from_os_str = "resolve_file"),
             raw(required = "true")
         )]
         dotfiles: Vec<PathBuf>,
@@ -68,7 +68,7 @@ pub enum Command {
     Manage {
         #[structopt(
             help = "Dotfile(s) to manage",
-            parse(try_from_os_str = "resolve_path"),
+            parse(try_from_os_str = "resolve_file"),
             raw(required = "true")
         )]
         dotfiles: Vec<PathBuf>,
@@ -83,7 +83,7 @@ pub enum Command {
     Unmanage {
         #[structopt(
             help = "Dotfile(s) to unmanage",
-            parse(try_from_os_str = "resolve_path"),
+            parse(try_from_os_str = "resolve_file"),
             raw(required = "true")
         )]
         dotfiles: Vec<PathBuf>,
@@ -105,6 +105,25 @@ fn resolve_path(path: &OsStr) -> Result<PathBuf, OsString> {
             path.to_string_lossy()
         ))
     })?;
+
+    Ok(path)
+}
+
+fn resolve_dir(path: &OsStr) -> Result<PathBuf, OsString> {
+    let path = resolve_path(path)?;
+
+    if path.is_dir() {
+        Ok(path)
+    } else {
+        Err(OsString::from(format!(
+            "Path `{}` must be a directory.",
+            path.display()
+        )))
+    }
+}
+
+fn resolve_file(path: &OsStr) -> Result<PathBuf, OsString> {
+    let path = resolve_path(path)?;
 
     if path.is_file() {
         Ok(path)

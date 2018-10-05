@@ -71,7 +71,6 @@ impl Dotfile {
         );
 
         let stripped = target.strip_prefix(&*::HOME_DIR)?;
-        println!("{}", stripped.display());
         ensure!(
             stripped.to_string_lossy().starts_with("."),
             "Target must be a dotfile."
