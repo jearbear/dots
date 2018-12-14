@@ -1,14 +1,3 @@
-#[macro_use]
-extern crate failure;
-#[macro_use]
-extern crate lazy_static;
-#[macro_use]
-extern crate structopt;
-
-extern crate clap;
-extern crate dirs;
-extern crate walkdir;
-
 mod args;
 mod dotfile;
 mod error;
@@ -16,12 +5,13 @@ mod error;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use failure::ResultExt;
+use failure::{bail, ensure, format_err, ResultExt};
+use lazy_static::lazy_static;
 use structopt::StructOpt;
 
-use args::{Command, Opt};
-use dotfile::{DFState, Dotfile, Store};
-use error::Result;
+use crate::args::{Command, Opt};
+use crate::dotfile::{DFState, Dotfile, Store};
+use crate::error::Result;
 
 lazy_static! {
     static ref HOME_DIR: PathBuf = dirs::home_dir().unwrap();
@@ -58,7 +48,8 @@ fn install_dotfiles(store: &Store, paths: &[PathBuf]) -> Result<()> {
                 dotfile.target.display()
             )),
             DFState::Uninstalled => dotfile.install(),
-        }.context(format!("Failed to install `{}`.", dotfile.name.display()))?;
+        }
+        .context(format!("Failed to install `{}`.", dotfile.name.display()))?;
     }
 
     Ok(())
@@ -71,7 +62,8 @@ fn uninstall_dotfiles(store: &Store, paths: &[PathBuf]) -> Result<()> {
         match dotfile.state() {
             DFState::Installed => dotfile.uninstall(),
             DFState::Blocked | DFState::Uninstalled => Ok(()),
-        }.context(format!("Failed to uninstall `{}`.", dotfile.name.display()))?;
+        }
+        .context(format!("Failed to uninstall `{}`.", dotfile.name.display()))?;
     }
 
     Ok(())

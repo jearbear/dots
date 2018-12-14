@@ -3,6 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use structopt::clap::AppSettings;
+use structopt::StructOpt;
 
 #[derive(StructOpt, Debug)]
 #[structopt(

@@ -1,10 +1,11 @@
+use failure::{bail, ensure};
 use walkdir::{DirEntry, WalkDir};
 
 use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 
-use error::Result;
+use crate::error::Result;
 
 pub struct Store {
     pub path: PathBuf,
@@ -60,7 +61,7 @@ impl Dotfile {
         Ok(Self {
             name: name.to_path_buf(),
             source: source.to_path_buf(),
-            target: ::HOME_DIR.join(format!(".{}", name.display())),
+            target: crate::HOME_DIR.join(format!(".{}", name.display())),
         })
     }
 
@@ -70,7 +71,7 @@ impl Dotfile {
             "Target cannot be in store path."
         );
 
-        let stripped = target.strip_prefix(&*::HOME_DIR)?;
+        let stripped = target.strip_prefix(&*crate::HOME_DIR)?;
         ensure!(
             stripped.to_string_lossy().starts_with('.'),
             "Target must be a dotfile."
@@ -115,11 +116,13 @@ impl Dotfile {
     pub fn state(&self) -> DFState {
         if self.target.exists() {
             match fs::read_link(&self.target) {
-                Ok(linked) => if linked == self.source {
-                    DFState::Installed
-                } else {
-                    DFState::Blocked
-                },
+                Ok(linked) => {
+                    if linked == self.source {
+                        DFState::Installed
+                    } else {
+                        DFState::Blocked
+                    }
+                }
                 _ => DFState::Blocked,
             }
         } else {
