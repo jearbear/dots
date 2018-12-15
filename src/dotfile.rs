@@ -1,11 +1,11 @@
-use failure::{bail, ensure};
+use dirs;
 use walkdir::{DirEntry, WalkDir};
 
 use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 
-use crate::error::Result;
+use crate::error::{AppError, Result};
 
 pub struct Store {
     pub path: PathBuf,
@@ -56,27 +56,28 @@ pub struct Dotfile {
 
 impl Dotfile {
     fn from_source(store_path: &Path, source: &Path) -> Result<Self> {
+        let home_dir = dirs::home_dir().unwrap();
         let name = source.strip_prefix(store_path)?;
 
         Ok(Self {
             name: name.to_path_buf(),
             source: source.to_path_buf(),
-            target: crate::HOME_DIR.join(format!(".{}", name.display())),
+            target: home_dir.join(format!(".{}", name.display())),
         })
     }
 
     pub fn from_target(store_path: &Path, target: &Path) -> Result<Self> {
-        ensure!(
-            !target.starts_with(store_path),
-            "Target cannot be in store path."
-        );
+        let home_dir = dirs::home_dir().unwrap();
 
-        let stripped = target.strip_prefix(&*crate::HOME_DIR)?;
-        ensure!(
-            stripped.to_string_lossy().starts_with('.'),
-            "Target must be a dotfile."
-        );
-        let name = PathBuf::from(stripped.to_string_lossy().trim_left_matches('.'));
+        if target.starts_with(store_path) {
+            return AppError::result("Target cannot be in store path.");
+        }
+
+        let stripped = target.strip_prefix(home_dir)?;
+        if !stripped.to_string_lossy().starts_with('.') {
+            return AppError::result("Target must be a dotfile.");
+        }
+        let name = PathBuf::from(stripped.to_string_lossy().trim_start_matches('.'));
 
         Ok(Self {
             source: store_path.join(&name),

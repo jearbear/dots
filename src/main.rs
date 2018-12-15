@@ -5,26 +5,22 @@ mod error;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use failure::{bail, ensure, format_err, ResultExt};
-use lazy_static::lazy_static;
 use structopt::StructOpt;
 
 use crate::args::{Command, Opt};
 use crate::dotfile::{DFState, Dotfile, Store};
-use crate::error::Result;
-
-lazy_static! {
-    static ref HOME_DIR: PathBuf = dirs::home_dir().unwrap();
-}
+use crate::error::{AppError, Result};
 
 fn do_main(args: Opt) -> Result<()> {
-    let dot_root = args.store.unwrap_or_else(|| HOME_DIR.join(".dotfiles"));
+    let home_dir = dirs::home_dir().unwrap();
+    let dot_root = args.store.unwrap_or_else(|| home_dir.join(".dotfiles"));
 
-    ensure!(
-        fs::metadata(&dot_root)?.is_dir(),
-        "Given store path `{}` is not a directory.",
-        dot_root.display()
-    );
+    if !fs::metadata(&dot_root)?.is_dir() {
+        return AppError::result(&format!(
+            "Given store path `{} is not a directory.",
+            dot_root.display()
+        ));
+    }
 
     let mut store = Store::new(&dot_root);
 
@@ -43,13 +39,12 @@ fn install_dotfiles(store: &Store, paths: &[PathBuf]) -> Result<()> {
 
         match dotfile.state() {
             DFState::Installed => Ok(()),
-            DFState::Blocked => Err(format_err!(
+            DFState::Blocked => AppError::result(&format!(
                 "Dotfile target `{}` is blocked.",
                 dotfile.target.display()
             )),
             DFState::Uninstalled => dotfile.install(),
-        }
-        .context(format!("Failed to install `{}`.", dotfile.name.display()))?;
+        }?;
     }
 
     Ok(())
@@ -62,8 +57,7 @@ fn uninstall_dotfiles(store: &Store, paths: &[PathBuf]) -> Result<()> {
         match dotfile.state() {
             DFState::Installed => dotfile.uninstall(),
             DFState::Blocked | DFState::Uninstalled => Ok(()),
-        }
-        .context(format!("Failed to uninstall `{}`.", dotfile.name.display()))?;
+        }?;
     }
 
     Ok(())
@@ -71,16 +65,16 @@ fn uninstall_dotfiles(store: &Store, paths: &[PathBuf]) -> Result<()> {
 
 fn manage_dotfiles(store: &mut Store, targets: &[PathBuf]) -> Result<()> {
     for target in targets {
-        ensure!(
-            store.get(target).is_none(),
-            "Dotfile with target `{}` already exists in the store.",
-            target.display()
-        );
+        if store.get(target).is_some() {
+            return AppError::result(&format!(
+                "Dotfile with target `{}` already exists in the store.",
+                target.display()
+            ));
+        }
 
         Dotfile::from_target(&store.path, target)
             .and_then(|df| df.store().map(|_| df))
-            .map(|df| store.add(df))
-            .context(format!("Failed to manage `{}`.", target.display()))?;
+            .map(|df| store.add(df))?;
     }
 
     Ok(())
@@ -88,14 +82,8 @@ fn manage_dotfiles(store: &mut Store, targets: &[PathBuf]) -> Result<()> {
 
 fn unmanage_dotfiles(store: &mut Store, paths: &[PathBuf]) -> Result<()> {
     for path in paths {
-        {
-            let dotfile = fetch_dotfile(store, path)?;
-
-            dotfile
-                .unstore()
-                .context(format!("Failed to unmanage `{}`", dotfile.name.display()))?;
-        }
-
+        let dotfile = fetch_dotfile(store, path)?;
+        dotfile.unstore()?;
         store.remove(path);
     }
 
@@ -122,9 +110,13 @@ fn list_dotfiles(store: &Store) -> Result<()> {
 }
 
 fn fetch_dotfile<'a>(store: &'a Store, path: &Path) -> Result<&'a Dotfile> {
-    store
-        .get(path)
-        .ok_or_else(|| format_err!("Dotfile not found with reference `{}`.", path.display()))
+    match store.get(path) {
+        Some(dotfile) => Ok(dotfile),
+        None => AppError::result(&format!(
+            "Dotfile not found with reference `{}`.",
+            path.display()
+        )),
+    }
 }
 
 fn main() {
@@ -132,9 +124,6 @@ fn main() {
 
     if let Err(err) = do_main(args) {
         eprintln!("Error: {}", err);
-        for cause in err.iter_chain().skip(1) {
-            eprintln!("Caused by: {}", cause);
-        }
         std::process::exit(1);
     }
 }
