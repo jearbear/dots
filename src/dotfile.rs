@@ -1,9 +1,9 @@
-use dirs;
-use walkdir::{DirEntry, WalkDir};
-
-use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
+use std::{fs, io};
+
+use dirs;
+use walkdir::{DirEntry, WalkDir};
 
 use crate::error::{AppError, Result};
 
@@ -24,7 +24,7 @@ impl Store {
             .filter(|e| e.file_type().is_file())
             .flat_map(|e| Dotfile::from_source(&path, &e.path()))
             .collect();
-        dotfiles.sort();
+        dotfiles.sort_by(|a, b| a.name.cmp(&b.name));
 
         Store { path, dotfiles }
     }
@@ -33,21 +33,11 @@ impl Store {
         self.dotfiles.iter().find(|d| d.referenced_by(path))
     }
 
-    pub fn add(&mut self, dotfile: Dotfile) {
-        self.dotfiles.push(dotfile);
-        self.dotfiles.sort();
-    }
-
-    pub fn remove(&mut self, path: &Path) {
-        self.dotfiles.retain(|df| !df.referenced_by(path))
-    }
-
     pub fn all(&self) -> impl Iterator<Item = &Dotfile> {
         self.dotfiles.iter()
     }
 }
 
-#[derive(Clone, Debug, PartialOrd, Ord, PartialEq, Eq)]
 pub struct Dotfile {
     pub name: PathBuf,
     pub source: PathBuf,
@@ -115,19 +105,10 @@ impl Dotfile {
     }
 
     pub fn state(&self) -> DFState {
-        if self.target.exists() {
-            match fs::read_link(&self.target) {
-                Ok(linked) => {
-                    if linked == self.source {
-                        DFState::Installed
-                    } else {
-                        DFState::Blocked
-                    }
-                }
-                _ => DFState::Blocked,
-            }
-        } else {
-            DFState::Uninstalled
+        match fs::read_link(&self.target) {
+            Ok(ref linked) if *linked == self.source => DFState::Installed,
+            Err(ref e) if e.kind() == io::ErrorKind::NotFound => DFState::Uninstalled,
+            _ => DFState::Blocked,
         }
     }
 }

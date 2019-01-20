@@ -9,12 +9,12 @@ use crate::dotfile::{DFState, Dotfile, Store};
 use crate::error::{AppError, Result};
 
 fn main() {
-    let res = args::init().map(|mut args| match args.command {
+    let res = args::init().map(|args| match args.command {
         Command::List => list_dotfiles(&args.store),
         Command::Install(df) => install_dotfile(&args.store, &df),
         Command::Uninstall(df) => uninstall_dotfile(&args.store, &df),
-        Command::Manage(df) => manage_dotfile(&mut args.store, &df),
-        Command::Unmanage(df) => unmanage_dotfile(&mut args.store, &df),
+        Command::Manage(df) => manage_dotfile(&args.store, &df),
+        Command::Unmanage(df) => unmanage_dotfile(&args.store, &df),
     });
 
     if let Err(err) = res {
@@ -49,7 +49,7 @@ fn uninstall_dotfile(store: &Store, path: &PathBuf) -> Result<()> {
     Ok(())
 }
 
-fn manage_dotfile(store: &mut Store, target: &PathBuf) -> Result<()> {
+fn manage_dotfile(store: &Store, target: &PathBuf) -> Result<()> {
     if store.get(target).is_some() {
         return AppError::result(&format!(
             "Dotfile with target `{}` already exists in the store.",
@@ -57,17 +57,13 @@ fn manage_dotfile(store: &mut Store, target: &PathBuf) -> Result<()> {
         ));
     }
 
-    Dotfile::from_target(&store.path, target)
-        .and_then(|df| df.store().map(|_| df))
-        .map(|df| store.add(df))?;
+    Dotfile::from_target(&store.path, target)?.store()?;
 
     Ok(())
 }
 
-fn unmanage_dotfile(store: &mut Store, path: &PathBuf) -> Result<()> {
-    let dotfile = fetch_dotfile(store, path)?;
-    dotfile.unstore()?;
-    store.remove(path);
+fn unmanage_dotfile(store: &Store, path: &PathBuf) -> Result<()> {
+    fetch_dotfile(store, path)?.unstore()?;
 
     Ok(())
 }
