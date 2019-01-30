@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use clap::{App, AppSettings, Arg, SubCommand};
 
 use crate::dotfile::Store;
-use crate::error::{AppError, Result};
+use crate::error::Result;
 
 pub struct Args {
     pub store: Store,
@@ -83,10 +83,7 @@ fn resolve_store(matches: &clap::ArgMatches) -> Result<Store> {
     if store_path.is_dir() {
         Ok(Store::new(&store_path))
     } else {
-        AppError::result(&format!(
-            "Path `{}` is not a directory.",
-            store_path.display()
-        ))
+        Err(format!("Path `{}` is not a directory.", store_path.display()).into())
     }
 }
 
@@ -102,16 +99,13 @@ fn resolve_dotfile(matches: &clap::ArgMatches) -> Result<PathBuf> {
     if is_reg_file {
         Ok(dotfile_path)
     } else {
-        AppError::result(&format!(
-            "Path `{}` is not a regular file.",
-            dotfile_path.display()
-        ))
+        Err(format!("Path `{}` is not a regular file.", dotfile_path.display()).into())
     }
 }
 
 fn resolve_path(path: &Path) -> Result<PathBuf> {
     let path = fs::canonicalize(path)
-        .map_err(|_| AppError::new(&format!("Path `{}` could not be resolved.", path.display())))?;
+        .map_err(|_| format!("Path `{}` could not be resolved.", path.display()))?;
 
     Ok(path)
 }

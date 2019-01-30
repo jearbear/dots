@@ -5,7 +5,7 @@ use std::{fs, io};
 use dirs;
 use walkdir::{DirEntry, WalkDir};
 
-use crate::error::{AppError, Result};
+use crate::error::Result;
 
 pub struct Store {
     pub path: PathBuf,
@@ -60,12 +60,12 @@ impl Dotfile {
         let home_dir = dirs::home_dir().unwrap();
 
         if target.starts_with(store_path) {
-            return AppError::result("Target cannot be in store path.");
+            return Err("Target cannot be in store path.".into());
         }
 
         let stripped = target.strip_prefix(home_dir)?;
         if !stripped.to_string_lossy().starts_with('.') {
-            return AppError::result("Target must be a dotfile.");
+            return Err("Target must be a dotfile.".into());
         }
         let name = PathBuf::from(stripped.to_string_lossy().trim_start_matches('.'));
 
