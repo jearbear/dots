@@ -26,7 +26,7 @@ pub fn init() -> Result<Args> {
         .value_name("PATH")
         .global(true);
 
-    let dotfiles = Arg::with_name("dotfiles")
+    let dotfiles = Arg::with_name("dotfile")
         .help("Dotfile(s) to manage")
         .value_name("DOTFILE")
         .multiple(true)
