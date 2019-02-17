@@ -36,19 +36,19 @@ pub fn init() -> Result<Args> {
         SubCommand::with_name("list").about("List all installed dotfiles in the given store");
 
     let install = SubCommand::with_name("install")
-        .about("Link dotfile(s) to target in home directory")
+        .about("Link dotfile to target in home directory")
         .arg(&dotfiles);
 
     let uninstall = SubCommand::with_name("uninstall")
-        .about("Unlink dotfile(s) to target in home directory")
+        .about("Remove dotfile target in home directory")
         .arg(&dotfiles);
 
     let manage = SubCommand::with_name("manage")
-        .about("Move dotfile(s) to the store and link them back to their target")
+        .about("Move dotfile to the store and link it back to its target")
         .arg(&dotfiles);
 
     let unmanage = SubCommand::with_name("unmanage")
-        .about("Move dotfile(s) out of the store and back to their target")
+        .about("Move dotfile out of the store and back to its target")
         .arg(&dotfiles);
 
     let matches = App::new("dots - Dotfile management made less toilesome.")
