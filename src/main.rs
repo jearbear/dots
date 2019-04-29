@@ -1,6 +1,7 @@
+#[macro_use]
+mod error;
 mod args;
 mod dotfile;
-mod error;
 
 use std::path::{Path, PathBuf};
 
@@ -28,9 +29,7 @@ fn install_dotfile(store: &Store, path: &PathBuf) -> Result<()> {
 
     match dotfile.state() {
         DFState::Installed => Ok(()),
-        DFState::Blocked => {
-            Err(format!("Dotfile target `{}` is blocked.", dotfile.target.display()).into())
-        }
+        DFState::Blocked => err!("Dotfile target `{}` is blocked.", dotfile.target.display()),
         DFState::Uninstalled => dotfile.install(),
     }?;
 
@@ -50,11 +49,10 @@ fn uninstall_dotfile(store: &Store, path: &PathBuf) -> Result<()> {
 
 fn manage_dotfile(store: &Store, target: &PathBuf) -> Result<()> {
     if store.get(target).is_some() {
-        return Err(format!(
+        return err!(
             "Dotfile with target `{}` already exists in the store.",
             target.display()
-        )
-        .into());
+        );
     }
 
     Dotfile::from_target(&store.path, target)?.store()?;
@@ -90,6 +88,6 @@ fn list_dotfiles(store: &Store) -> Result<()> {
 fn fetch_dotfile<'a>(store: &'a Store, path: &Path) -> Result<&'a Dotfile> {
     match store.get(path) {
         Some(dotfile) => Ok(dotfile),
-        None => Err(format!("Dotfile not found with reference `{}`.", path.display()).into()),
+        None => err!("Dotfile not found with reference `{}`.", path.display()),
     }
 }

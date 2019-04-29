@@ -83,7 +83,7 @@ fn resolve_store(matches: &clap::ArgMatches) -> Result<Store> {
     if store_path.is_dir() {
         Ok(Store::new(&store_path))
     } else {
-        Err(format!("Path `{}` is not a directory.", store_path.display()).into())
+        err!("Path `{}` is not a directory.", store_path.display())
     }
 }
 
@@ -99,7 +99,7 @@ fn resolve_dotfile(matches: &clap::ArgMatches) -> Result<PathBuf> {
     if is_reg_file {
         Ok(dotfile_path)
     } else {
-        Err(format!("Path `{}` is not a regular file.", dotfile_path.display()).into())
+        err!("Path `{}` is not a regular file.", dotfile_path.display())
     }
 }
 
