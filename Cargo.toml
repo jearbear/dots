@@ -1,9 +1,13 @@
 [package]
-authors = ["Jerry Tegno <jerrytegno@gmail.com>"]
-edition = "2018"
 name = "dots"
-version = "0.1.0"
+version = "0.2.0"
+authors = ["Jerry Tegno <jerry@stripe.com>"]
+edition = "2018"
+
 [dependencies]
-clap = "2.32.0"
-dirs = "1.0.4"
-walkdir = "2.2.7"
+# TODO: Pin this to an actual version once the 3.0 update lands
+clap = { git = "https://github.com/clap-rs/clap/", rev = "19c20f7c00310900ce6667baedfe1190e20eeeab" }
+dirs = "2.0"
+lazy_static = "1.4"
+walkdir = "2"
+

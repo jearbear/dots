@@ -1,93 +1,233 @@
-#[macro_use]
-mod error;
-mod args;
-mod dotfile;
-
+use std::ffi::OsString;
+use std::fs;
+use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 
-use crate::args::Command;
-use crate::dotfile::{DFState, Dotfile, Store};
-use crate::error::Result;
+use clap::Clap;
+use lazy_static::lazy_static;
+use walkdir::{DirEntry, WalkDir};
+
+#[macro_export]
+macro_rules! err {
+    ($e:expr) => {{
+        eprintln!("Error: {}", $e);
+        std::process::exit(1);
+    }};
+
+    ($e:expr, $($es:expr),+) => {{
+        err!(format!($e, $($es)+));
+    }}
+}
+
+lazy_static! {
+    static ref HOME_DIR: PathBuf =
+        dirs::home_dir().unwrap_or_else(|| err!("Couldn't obtain home directory"));
+    static ref DEFAULT_DIR: PathBuf = HOME_DIR.join(".dotfiles");
+}
+
+/// A small program that helps you manage your dotfiles.
+#[derive(Clap, Debug)]
+struct Opts {
+    /// Directory to use as the dotfile store.
+    #[clap(short, long, default_value = DEFAULT_DIR.to_str().unwrap())]
+    store_dir: PathBuf,
+
+    #[clap(subcommand)]
+    command: SubCommand,
+}
+
+#[derive(Clap, Debug)]
+enum SubCommand {
+    /// List the status of all dotfiles in the store.
+    List,
+
+    /// Given a path to a file in the home directory, add it to your dotfile store. This will move
+    /// the original file and replace the old location with a symlink into its new location in the
+    /// dotfile store.
+    Add { target: PathBuf },
+
+    /// Given a path to a file in the home directory, remove it from your dotfile store. This will
+    /// replace the symlink in the home directory with the original file from the dotfile store.
+    Remove { target: PathBuf },
+
+    /// Given a path to a file in the dotfile store, create a symlink to it in the home directory.
+    Link { source: PathBuf },
+
+    /// If given a path to a file in the dotfile store, remove the file in the home directory that
+    /// links to it. If given a path to a file in the home directory, remove that file, assuming it
+    /// links back to a file in the dotfile store.
+    Unlink { path: PathBuf },
+}
 
 fn main() {
-    let res = args::init().map(|args| match args.command {
-        Command::List => list_dotfiles(&args.store),
-        Command::Install(df) => install_dotfile(&args.store, &df),
-        Command::Uninstall(df) => uninstall_dotfile(&args.store, &df),
-        Command::Manage(df) => manage_dotfile(&args.store, &df),
-        Command::Unmanage(df) => unmanage_dotfile(&args.store, &df),
-    });
+    let opts: Opts = Opts::parse();
 
-    if let Err(err) = res {
-        eprintln!("Error: {}", err);
-        std::process::exit(1);
+    match opts.command {
+        SubCommand::List => {
+            eprintln!("Listing dotfiles from {}", opts.store_dir.display());
+            eprintln!("Legend: [x] installed, [-] blocked, [ ] uninstalled");
+            eprintln!("---------------------------------------------------");
+
+            WalkDir::new(&opts.store_dir)
+                .min_depth(1)
+                .sort_by(|a, b| a.file_name().cmp(b.file_name()))
+                .into_iter()
+                .filter_entry(|e| !is_ignored(e))
+                .filter_map(|e| e.ok())
+                .filter(|e| e.file_type().is_file())
+                .for_each(|e| {
+                    let source = e.path();
+                    let name = source.strip_prefix(&opts.store_dir).unwrap();
+                    let target = HOME_DIR.join(prepend_dot(name));
+
+                    match target.read_link() {
+                        Ok(s) if s == source => println!("[x] {}", name.display()),
+                        Ok(_) => println!("[-] {}", name.display()),
+                        Err(_) => println!("[ ] {}", name.display()),
+                    }
+                });
+        }
+
+        SubCommand::Add { target } => {
+            assert_path_exists(&target);
+
+            if let Ok(source) = target.read_link() {
+                if !source.starts_with(&opts.store_dir) {
+                    err!(
+                        "Target path is already a symlink to another file: `{}`",
+                        source.display()
+                    );
+                }
+                return;
+            }
+
+            if target.is_dir() {
+                err!("Target path must be a regular file");
+            }
+
+            if target.starts_with(&opts.store_dir) {
+                err!("Target path cannot be in the dotfile store");
+            }
+
+            let name = target
+                .strip_prefix(&*HOME_DIR)
+                .unwrap_or_else(|_| err!("Target path must be in the user's home directory"));
+
+            if !name.to_string_lossy().starts_with('.') {
+                err!("Target path must be a dotfile");
+            }
+
+            let name = PathBuf::from(name.to_string_lossy().trim_start_matches('.'));
+            let source = opts.store_dir.join(&name);
+
+            if source.exists() {
+                err!(
+                    "File already exists in dotfile store with source path: `{}`",
+                    source.display()
+                );
+            }
+            if let Some(parent_dir) = source.parent() {
+                fs::create_dir_all(parent_dir).unwrap_or_else(io_err_exit);
+            }
+
+            fs::rename(&target, &source).unwrap_or_else(io_err_exit);
+            symlink(&source, &target).unwrap_or_else(io_err_exit);
+        }
+
+        SubCommand::Remove { target } => {
+            assert_path_exists(&target);
+
+            let err_msg = "Target path must be a symlink to a file in the dotfile store";
+
+            let source = target.read_link().unwrap_or_else(|_| err!(err_msg));
+            if !source.starts_with(&opts.store_dir) {
+                err!(err_msg);
+            }
+
+            assert!(source.exists());
+            fs::remove_file(&target).unwrap_or_else(io_err_exit);
+            fs::rename(&source, &target).unwrap_or_else(io_err_exit);
+        }
+
+        SubCommand::Link { source } => {
+            assert_path_exists(&source);
+
+            if !source.starts_with(&opts.store_dir) {
+                err!("Source path must be in the dotfile store");
+            }
+
+            let name = source.strip_prefix(&opts.store_dir).unwrap();
+            let target = HOME_DIR.join(prepend_dot(name));
+
+            if target.exists() {
+                match target.read_link() {
+                    Ok(s) if s == source => return,
+                    _ => err!(
+                        "Target path (`{}`) blocked by an existing file",
+                        target.display()
+                    ),
+                }
+            }
+
+            symlink(&source, &target).unwrap_or_else(io_err_exit);
+        }
+
+        SubCommand::Unlink { path } => {
+            assert_path_exists(&path);
+
+            if path.starts_with(&opts.store_dir) {
+                let source = path; // For clarity
+                let name = source.strip_prefix(&opts.store_dir).unwrap();
+                let target = HOME_DIR.join(prepend_dot(name));
+
+                if !target.exists() {
+                    return;
+                }
+
+                match target.read_link() {
+                    Ok(s) if s == source => {
+                        fs::remove_file(target).unwrap_or_else(io_err_exit);
+                    }
+                    _ => err!(
+                        "The derived target (`{}`) exists, but does not link back to the given path",
+                        target.display()
+                    ),
+                };
+            } else if path.starts_with(&*HOME_DIR) {
+                // Not much sanity checking is done here. If you have a symlink into your dotfile
+                // directory that's not a dotfile, you probably know what you're doing.
+                match path.read_link() {
+                    Ok(s) if s.starts_with(&opts.store_dir) => {
+                        fs::remove_file(path).unwrap_or_else(io_err_exit);
+                    }
+                    _ => err!("Given path is not a symlink to a file in the dotfile store"),
+                };
+            }
+
+            err!("Path must be either in the store directory or home directory");
+        }
     }
 }
 
-fn install_dotfile(store: &Store, path: &PathBuf) -> Result<()> {
-    let dotfile = fetch_dotfile(store, path)?;
-
-    match dotfile.state() {
-        DFState::Installed => Ok(()),
-        DFState::Blocked => err!("Dotfile target `{}` is blocked.", dotfile.target.display()),
-        DFState::Uninstalled => dotfile.install(),
-    }?;
-
-    Ok(())
+fn io_err_exit(io_err: std::io::Error) {
+    err!("I/O error occurred: `{}`", io_err);
 }
 
-fn uninstall_dotfile(store: &Store, path: &PathBuf) -> Result<()> {
-    let dotfile = fetch_dotfile(store, path)?;
-
-    match dotfile.state() {
-        DFState::Installed => dotfile.uninstall(),
-        DFState::Blocked | DFState::Uninstalled => Ok(()),
-    }?;
-
-    Ok(())
-}
-
-fn manage_dotfile(store: &Store, target: &PathBuf) -> Result<()> {
-    if store.get(target).is_some() {
-        return err!(
-            "Dotfile with target `{}` already exists in the store.",
-            target.display()
-        );
+fn assert_path_exists(path: &Path) {
+    if !path.exists() {
+        err!("Given path does not exist");
     }
-
-    Dotfile::from_target(&store.path, target)?.store()?;
-
-    Ok(())
 }
 
-fn unmanage_dotfile(store: &Store, path: &PathBuf) -> Result<()> {
-    fetch_dotfile(store, path)?.unstore()?;
-
-    Ok(())
-}
-
-fn list_dotfiles(store: &Store) -> Result<()> {
-    eprintln!("Printing dotfiles from {}", store.path.display());
-    eprintln!("Legend: [x] installed, [-] blocked, [ ] uninstalled\n");
-
-    for dotfile in store.all() {
-        println!(
-            "[{}] {}",
-            match dotfile.state() {
-                DFState::Installed => "x",
-                DFState::Blocked => "-",
-                DFState::Uninstalled => " ",
-            },
-            dotfile.name.display(),
-        );
+fn is_ignored(entry: &DirEntry) -> bool {
+    match entry.file_name().to_str() {
+        Some(name) => name.starts_with('.') || name.starts_with("README"),
+        None => false,
     }
-
-    Ok(())
 }
 
-fn fetch_dotfile<'a>(store: &'a Store, path: &Path) -> Result<&'a Dotfile> {
-    match store.get(path) {
-        Some(dotfile) => Ok(dotfile),
-        None => err!("Dotfile not found with reference `{}`.", path.display()),
-    }
+fn prepend_dot(path: &Path) -> PathBuf {
+    let mut res = OsString::from(".");
+    res.push(path);
+    PathBuf::from(res)
 }
