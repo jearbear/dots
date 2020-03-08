@@ -25,7 +25,7 @@ alias sdots='dots --store-dir "~/.dotfiles.stripe"'
 
 ### linking all files in the store
 ```
-ls <store_dir> | xargs dots --store-dir <store_dir> {}
+dots list | awk '{print $NF}' | xargs dots --store-dir <store_dir>
 ```
 
 ## help text

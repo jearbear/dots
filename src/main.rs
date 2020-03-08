@@ -1,3 +1,4 @@
+use std::env;
 use std::ffi::OsString;
 use std::fs;
 use std::os::unix::fs::symlink;
@@ -5,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use clap::Clap;
 use lazy_static::lazy_static;
+use path_clean::PathClean;
 use walkdir::{DirEntry, WalkDir};
 
 #[macro_export]
@@ -23,6 +25,8 @@ lazy_static! {
     static ref HOME_DIR: PathBuf =
         dirs::home_dir().unwrap_or_else(|| err!("Couldn't obtain home directory"));
     static ref DEFAULT_DIR: PathBuf = HOME_DIR.join(".dotfiles");
+    static ref CUR_DIR: PathBuf =
+        env::current_dir().unwrap_or_else(|_| err!("Couldn't obtain current directory"));
 }
 
 /// A small program that helps you manage your dotfiles.
@@ -90,6 +94,7 @@ fn main() {
 
         SubCommand::Add { target } => {
             assert_path_exists(&target);
+            let target = abs_path(target);
 
             if let Ok(source) = target.read_link() {
                 if !source.starts_with(&opts.store_dir) {
@@ -136,6 +141,7 @@ fn main() {
 
         SubCommand::Remove { target } => {
             assert_path_exists(&target);
+            let target = abs_path(target);
 
             let err_msg = "Target path must be a symlink to a file in the dotfile store";
 
@@ -151,6 +157,7 @@ fn main() {
 
         SubCommand::Link { source } => {
             assert_path_exists(&source);
+            let source = abs_path(source);
 
             if !source.starts_with(&opts.store_dir) {
                 err!("Source path must be in the dotfile store");
@@ -174,6 +181,7 @@ fn main() {
 
         SubCommand::Unlink { path } => {
             assert_path_exists(&path);
+            let path = abs_path(path);
 
             if path.starts_with(&opts.store_dir) {
                 let source = path; // For clarity
@@ -202,9 +210,9 @@ fn main() {
                     }
                     _ => err!("Given path is not a symlink to a file in the dotfile store"),
                 };
+            } else {
+                err!("Path must be either in the store directory or home directory");
             }
-
-            err!("Path must be either in the store directory or home directory");
         }
     }
 }
@@ -230,4 +238,12 @@ fn prepend_dot(path: &Path) -> PathBuf {
     let mut res = OsString::from(".");
     res.push(path);
     PathBuf::from(res)
+}
+
+fn abs_path(path: PathBuf) -> PathBuf {
+    if path.is_absolute() {
+        path.clean()
+    } else {
+        CUR_DIR.join(path).clean()
+    }
 }

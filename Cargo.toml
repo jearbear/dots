@@ -9,5 +9,5 @@ edition = "2018"
 clap = { git = "https://github.com/clap-rs/clap/", rev = "19c20f7c00310900ce6667baedfe1190e20eeeab" }
 dirs = "2.0"
 lazy_static = "1.4"
+path-clean = "0.1"
 walkdir = "2"
-
