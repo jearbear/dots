@@ -5,11 +5,10 @@ control, moved around, etc. Dotfiles are installed by symlinking from their
 source locations in the store to their target in your home directory.
 
 An illustration to clarify the source to target mapping:
-```
-     source path             target path
- -------------------      ------------------
- <store path>/<name>  ->  <home dir>/.<name>
-```
+| source path           | target path          |
+|-----------------------|----------------------|
+| `<store path>/<name>` | `<home dir>/.<name>` |
+
 Note that source files in your dotfile store don't have the `.` prefix making
 them visible by default!
 
