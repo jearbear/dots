@@ -1,5 +1,5 @@
 use std::env;
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
@@ -33,7 +33,7 @@ lazy_static! {
 #[derive(Clap, Debug)]
 struct Opts {
     /// Directory to use as the dotfile store.
-    #[clap(short, long, default_value = DEFAULT_DIR.to_str().unwrap())]
+    #[clap(short, long, default_value = DEFAULT_DIR.to_str().unwrap(), parse(try_from_os_str = parse_path))]
     store_dir: PathBuf,
 
     #[clap(subcommand)]
@@ -48,19 +48,31 @@ enum SubCommand {
     /// Given a path to a file in the home directory, add it to your dotfile store. This will move
     /// the original file and replace the old location with a symlink into its new location in the
     /// dotfile store.
-    Add { target: PathBuf },
+    Add {
+        #[clap(parse(try_from_os_str = parse_path))]
+        target: PathBuf,
+    },
 
     /// Given a path to a file in the home directory, remove it from your dotfile store. This will
     /// replace the symlink in the home directory with the original file from the dotfile store.
-    Remove { target: PathBuf },
+    Remove {
+        #[clap(parse(try_from_os_str = parse_path))]
+        target: PathBuf,
+    },
 
     /// Given a path to a file in the dotfile store, create a symlink to it in the home directory.
-    Link { source: PathBuf },
+    Link {
+        #[clap(parse(try_from_os_str = parse_path))]
+        source: PathBuf,
+    },
 
     /// If given a path to a file in the dotfile store, remove the file in the home directory that
     /// links to it. If given a path to a file in the home directory, remove that file, assuming it
     /// links back to a file in the dotfile store.
-    Unlink { path: PathBuf },
+    Unlink {
+        #[clap(parse(try_from_os_str = parse_path))]
+        path: PathBuf,
+    },
 }
 
 fn main() {
@@ -93,9 +105,6 @@ fn main() {
         }
 
         SubCommand::Add { target } => {
-            assert_path_exists(&target);
-            let target = abs_path(target);
-
             if let Ok(source) = target.read_link() {
                 if !source.starts_with(&opts.store_dir) {
                     err!(
@@ -140,9 +149,6 @@ fn main() {
         }
 
         SubCommand::Remove { target } => {
-            assert_path_exists(&target);
-            let target = abs_path(target);
-
             let err_msg = "Target path must be a symlink to a file in the dotfile store";
 
             let source = target.read_link().unwrap_or_else(|_| err!(err_msg));
@@ -156,9 +162,6 @@ fn main() {
         }
 
         SubCommand::Link { source } => {
-            assert_path_exists(&source);
-            let source = abs_path(source);
-
             if !source.starts_with(&opts.store_dir) {
                 err!("Source path must be in the dotfile store");
             }
@@ -180,9 +183,6 @@ fn main() {
         }
 
         SubCommand::Unlink { path } => {
-            assert_path_exists(&path);
-            let path = abs_path(path);
-
             if path.starts_with(&opts.store_dir) {
                 let source = path; // For clarity
                 let name = source.strip_prefix(&opts.store_dir).unwrap();
@@ -221,12 +221,6 @@ fn io_err_exit(io_err: std::io::Error) {
     err!("I/O error occurred: `{}`", io_err);
 }
 
-fn assert_path_exists(path: &Path) {
-    if !path.exists() {
-        err!("Given path does not exist");
-    }
-}
-
 fn is_ignored(entry: &DirEntry) -> bool {
     match entry.file_name().to_str() {
         Some(name) => name.starts_with('.') || name.starts_with("README"),
@@ -240,10 +234,14 @@ fn prepend_dot(path: &Path) -> PathBuf {
     PathBuf::from(res)
 }
 
-fn abs_path(path: PathBuf) -> PathBuf {
+fn parse_path(path: &OsStr) -> Result<PathBuf, String> {
+    let path = PathBuf::from(path);
+    if !path.exists() {
+        return Err("Given path does not exist".into());
+    }
     if path.is_absolute() {
-        path.clean()
+        Ok(path.clean())
     } else {
-        CUR_DIR.join(path).clean()
+        Ok(CUR_DIR.join(path).clean())
     }
 }
