@@ -179,6 +179,9 @@ fn main() {
                 }
             }
 
+            if let Some(parent_dir) = target.parent() {
+                fs::create_dir_all(parent_dir).unwrap_or_else(io_err_exit);
+            }
             symlink(&source, &target).unwrap_or_else(io_err_exit);
         }
 
