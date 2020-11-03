@@ -5,6 +5,7 @@ authors = ["Jerry Tegno <jerry@stripe.com>"]
 edition = "2018"
 
 [dependencies]
+anyhow = "1.0"
 # TODO: Pin this to an actual version once the 3.0 update lands
 clap = { git = "https://github.com/clap-rs/clap/", rev = "19c20f7c00310900ce6667baedfe1190e20eeeab" }
 dirs = "2.0"

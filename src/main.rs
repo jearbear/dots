@@ -4,29 +4,16 @@ use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 
+use anyhow::{bail, ensure, Context, Result};
 use clap::Clap;
 use lazy_static::lazy_static;
 use path_clean::PathClean;
 use walkdir::{DirEntry, WalkDir};
 
-#[macro_export]
-macro_rules! err {
-    ($e:expr) => {{
-        eprintln!("Error: {}", $e);
-        std::process::exit(1);
-    }};
-
-    ($e:expr, $($es:expr),+) => {{
-        err!(format!($e, $($es)+));
-    }}
-}
-
 lazy_static! {
-    static ref HOME_DIR: PathBuf =
-        dirs::home_dir().unwrap_or_else(|| err!("Couldn't obtain home directory"));
+    static ref HOME_DIR: PathBuf = dirs::home_dir().expect("Couldn't obtain home directory");
     static ref DEFAULT_DIR: PathBuf = HOME_DIR.join(".dotfiles");
-    static ref CUR_DIR: PathBuf =
-        env::current_dir().unwrap_or_else(|_| err!("Couldn't obtain current directory"));
+    static ref CUR_DIR: PathBuf = env::current_dir().expect("Couldn't obtain current directory");
 }
 
 /// A small program that helps you manage your dotfiles.
@@ -75,7 +62,7 @@ enum SubCommand {
     },
 }
 
-fn main() {
+fn main() -> Result<()> {
     let opts: Opts = Opts::parse();
 
     match opts.command {
@@ -93,6 +80,7 @@ fn main() {
                 .filter(|e| e.file_type().is_file())
                 .for_each(|e| {
                     let source = e.path();
+                    // We're listing from the store path so this should never fail.
                     let name = source.strip_prefix(&opts.store_dir).unwrap();
                     let target = HOME_DIR.join(prepend_dot(name));
 
@@ -102,77 +90,78 @@ fn main() {
                         Err(_) => println!("[ ] {}", name.display()),
                     }
                 });
+
+            Ok(())
         }
 
         SubCommand::Add { target } => {
             if let Ok(source) = target.read_link() {
-                if !source.starts_with(&opts.store_dir) {
-                    err!(
-                        "Target path is already a symlink to another file: `{}`",
-                        source.display()
-                    );
-                }
-                return;
+                ensure!(
+                    source.starts_with(&opts.store_dir),
+                    "Target path is already a symlink to another file: `{}`",
+                    source.display()
+                );
+                return Ok(());
             }
 
-            if target.is_dir() {
-                err!("Target path must be a regular file");
-            }
-
-            if target.starts_with(&opts.store_dir) {
-                err!("Target path cannot be in the dotfile store");
-            }
+            ensure!(!target.is_dir(), "Target path must be a regular file");
+            ensure!(
+                !target.starts_with(&opts.store_dir),
+                "Target path cannot be in the dotfile store"
+            );
 
             let name = target
                 .strip_prefix(&*HOME_DIR)
-                .unwrap_or_else(|_| err!("Target path must be in the user's home directory"));
+                .context("Target path must be in the user's home directory")?;
 
-            if !name.to_string_lossy().starts_with('.') {
-                err!("Target path must be a dotfile");
-            }
+            ensure!(
+                name.to_string_lossy().starts_with('.'),
+                "Target path must be a dotfile"
+            );
 
             let name = PathBuf::from(name.to_string_lossy().trim_start_matches('.'));
             let source = opts.store_dir.join(&name);
 
-            if source.exists() {
-                err!(
-                    "File already exists in dotfile store with source path: `{}`",
-                    source.display()
-                );
-            }
-            if let Some(parent_dir) = source.parent() {
-                fs::create_dir_all(parent_dir).unwrap_or_else(io_err_exit);
-            }
+            ensure!(
+                !source.exists(),
+                "File already exists in dotfile store with source path: `{}`",
+                source.display()
+            );
 
-            fs::rename(&target, &source).unwrap_or_else(io_err_exit);
-            symlink(&source, &target).unwrap_or_else(io_err_exit);
+            if let Some(parent_dir) = source.parent() {
+                fs::create_dir_all(parent_dir)?;
+            }
+            fs::rename(&target, &source)?;
+            symlink(&source, &target)?;
+
+            Ok(())
         }
 
         SubCommand::Remove { target } => {
             let err_msg = "Target path must be a symlink to a file in the dotfile store";
 
-            let source = target.read_link().unwrap_or_else(|_| err!(err_msg));
-            if !source.starts_with(&opts.store_dir) {
-                err!(err_msg);
-            }
+            let source = target.read_link().context(err_msg)?;
+            ensure!(source.starts_with(&opts.store_dir), err_msg);
 
-            assert!(source.exists());
-            fs::remove_file(&target).unwrap_or_else(io_err_exit);
-            fs::rename(&source, &target).unwrap_or_else(io_err_exit);
+            fs::remove_file(&target)?;
+            fs::rename(&source, &target)?;
+
+            Ok(())
         }
 
         SubCommand::Link { source } => {
-            if !source.starts_with(&opts.store_dir) {
-                err!("Source path must be in the dotfile store");
-            }
+            ensure!(
+                source.starts_with(&opts.store_dir),
+                "Source path must be in the dotfile store"
+            );
 
-            let name = source.strip_prefix(&opts.store_dir).unwrap();
+            let name = source.strip_prefix(&opts.store_dir)?;
             let target = HOME_DIR.join(prepend_dot(name));
 
             if target.exists() {
                 match target.read_link() {
-                    Ok(s) if s == source => return,
-                    _ => err!(
+                    Ok(s) if s == source => return Ok(()),
+                    _ => bail!(
                         "Target path (`{}`) blocked by an existing file",
                         target.display()
                     ),
@@ -180,26 +169,28 @@ fn main() {
             }
 
             if let Some(parent_dir) = target.parent() {
-                fs::create_dir_all(parent_dir).unwrap_or_else(io_err_exit);
+                fs::create_dir_all(parent_dir)?;
             }
-            symlink(&source, &target).unwrap_or_else(io_err_exit);
+            symlink(&source, &target)?;
+
+            Ok(())
         }
 
         SubCommand::Unlink { path } => {
             if path.starts_with(&opts.store_dir) {
                 let source = path; // For clarity
-                let name = source.strip_prefix(&opts.store_dir).unwrap();
+                let name = source.strip_prefix(&opts.store_dir)?;
                 let target = HOME_DIR.join(prepend_dot(name));
 
                 if !target.exists() {
-                    return;
+                    return Ok(());
                 }
 
                 match target.read_link() {
                     Ok(s) if s == source => {
-                        fs::remove_file(target).unwrap_or_else(io_err_exit);
+                        fs::remove_file(target)?;
                     }
-                    _ => err!(
+                    _ => bail!(
                         "The derived target (`{}`) exists, but does not link back to the given path",
                         target.display()
                     ),
@@ -209,19 +200,17 @@ fn main() {
                 // directory that's not a dotfile, you probably know what you're doing.
                 match path.read_link() {
                     Ok(s) if s.starts_with(&opts.store_dir) => {
-                        fs::remove_file(path).unwrap_or_else(io_err_exit);
+                        fs::remove_file(path)?;
                     }
-                    _ => err!("Given path is not a symlink to a file in the dotfile store"),
+                    _ => bail!("Given path is not a symlink to a file in the dotfile store"),
                 };
             } else {
-                err!("Path must be either in the store directory or home directory");
+                bail!("Path must be either in the store directory or home directory");
             }
+
+            Ok(())
         }
     }
-}
-
-fn io_err_exit(io_err: std::io::Error) {
-    err!("I/O error occurred: `{}`", io_err);
 }
 
 fn is_ignored(entry: &DirEntry) -> bool {
