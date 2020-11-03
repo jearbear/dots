@@ -86,7 +86,7 @@ fn main() -> Result<()> {
 
                     match target.read_link() {
                         Ok(s) if s == source => println!("[x] {}", name.display()),
-                        Ok(_) => println!("[-] {}", name.display()),
+                        Ok(s) => println!("[-] {} ({})", name.display(), s.display()),
                         Err(_) => println!("[ ] {}", name.display()),
                     }
                 });
