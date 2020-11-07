@@ -229,9 +229,8 @@ fn prepend_dot(path: &Path) -> PathBuf {
 fn parse_path(path: &OsStr) -> Result<PathBuf, String> {
     let path = PathBuf::from(path);
     if !path.exists() {
-        return Err("Given path does not exist".into());
-    }
-    if path.is_absolute() {
+        Err("Given path does not exist".into())
+    } else if path.is_absolute() {
         Ok(path.clean())
     } else {
         Ok(CUR_DIR.join(path).clean())
