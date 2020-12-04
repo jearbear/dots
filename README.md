@@ -22,9 +22,19 @@ both my personal and work dotfiles at once:
 alias sdots='dots --store-dir "~/.dotfiles.stripe"'
 ```
 
+### listing all files for scripting
+```
+dots list | sed 's/\[.\] //' | sed 's/(.*)$//'
+```
+
 ### linking all files in the store
 ```
-dots list | awk '{print $NF}' | xargs dots --store-dir <store_dir>
+dots list | sed 's/\[.\] //' | sed 's/(.*)$//' | xargs -I % -- dots link %
+```
+
+### linking files interactively with `fzf`
+```
+dots list | fzf -m | sed 's/\[.\] //' | sed 's/(.*)$//' | xargs -I % -- dots link %
 ```
 
 ## help text

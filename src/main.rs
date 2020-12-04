@@ -154,6 +154,7 @@ fn main() -> Result<()> {
                 source.starts_with(&opts.store_dir),
                 "Source path must be in the dotfile store"
             );
+            ensure!(!source.is_dir(), "Source path must be a regular file");
 
             let name = source.strip_prefix(&opts.store_dir)?;
             let target = HOME_DIR.join(prepend_dot(name));
