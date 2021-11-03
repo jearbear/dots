@@ -32,17 +32,17 @@ enum SubCommand {
     /// List the status of all dotfiles in the store.
     List,
 
-    /// Given a path to a file in the home directory, add it to your dotfile store. This will move
-    /// the original file and replace the old location with a symlink into its new location in the
-    /// dotfile store.
-    Add {
+    /// Given a path to a file in the home directory, "store" it in your dotfiles store. This will
+    /// move the original file and replace the old location with a symlink to its new location in
+    /// the dotfile store.
+    Store {
         #[clap(parse(try_from_os_str = parse_path))]
         target: PathBuf,
     },
 
     /// Given a path to a file in the home directory, remove it from your dotfile store. This will
     /// replace the symlink in the home directory with the original file from the dotfile store.
-    Remove {
+    Unstore {
         #[clap(parse(try_from_os_str = parse_path))]
         target: PathBuf,
     },
@@ -86,7 +86,8 @@ fn main() -> Result<()> {
 
                     match target.read_link() {
                         Ok(s) if s == source => println!("[x] {}", name.display()),
-                        Ok(s) => println!("[-] {} ({})", name.display(), s.display()),
+                        Ok(s) => println!("[-] {} (-> {})", name.display(), s.display()),
+                        Err(_) if target.exists() => println!("[-] {}", name.display()),
                         Err(_) => println!("[ ] {}", name.display()),
                     }
                 });
@@ -94,7 +95,7 @@ fn main() -> Result<()> {
             Ok(())
         }
 
-        SubCommand::Add { target } => {
+        SubCommand::Store { target } => {
             if let Ok(source) = target.read_link() {
                 ensure!(
                     source.starts_with(&opts.store_dir),
@@ -137,7 +138,7 @@ fn main() -> Result<()> {
             Ok(())
         }
 
-        SubCommand::Remove { target } => {
+        SubCommand::Unstore { target } => {
             let err_msg = "Target path must be a symlink to a file in the dotfile store";
 
             let source = target.read_link().context(err_msg)?;
